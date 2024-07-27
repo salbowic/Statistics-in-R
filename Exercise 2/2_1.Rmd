@@ -1,0 +1,115 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+# Funkcja wykonująca test t studenta na próbach X i Y
+
+perform_t_student_test <- function(X_probe, Y_probe) {
+  t_test_result <- t.test(X_probe, Y_probe)
+  return(t_test_result$p.value)
+}
+
+# Funkcja wykonująca test Wilcoxona na próbach X i Y
+perform_wilcoxon_rank_sum_test <- function(X_probe, Y_probe) {
+  wilcox_test_result <- wilcox.test(X_probe, Y_probe)
+  return(wilcox_test_result$p.value)
+}
+```
+
+
+```{r}
+library(ggplot2)
+
+#Eksperyment przeprowadzający testy
+
+perform_comparison_test_for_probes <- function(E_range, sigma2, X_sd = 1) {
+  power_values <- numeric(length(E_range))
+  power_values_wilcoxon <- numeric(length(E_range))
+  
+  for (i in seq_along(E_range)) {
+    delta <- E_range[i]
+    p_values <- numeric(n_sim)
+    p_values_wilcoxon <- numeric(n_sim)
+
+    for (j in 1:n_sim) {
+      X <- rnorm(n, mean = 0, sd = X_sd)
+      Y <- rnorm(n, mean = delta, sd = sigma2)  # Generacja próby Y ze zmienną wariancją
+      p_values[j] <- perform_t_student_test(X, Y)
+      p_values_wilcoxon[j] <- perform_wilcoxon_rank_sum_test(X, Y)
+    }
+
+    # Obliczenie proporcji testów, które nie przekraczają poziomu istotności
+    power_values[i] <- mean(p_values < alpha)
+    power_values_wilcoxon[i] <- mean(p_values_wilcoxon < alpha)
+  }
+  
+  
+  title <- if (sigma2 == X_sd) "Te same odchylenia standardowe" else "Różne odchylenia standardowe"
+
+  delta_min_t <- E_range[which.min(abs(power_values - 0.8))]
+  delta_min_wilcoxon <- E_range[which.min(abs(power_values_wilcoxon - 0.8))]
+
+  cat("Minimalna wykrywalna różnica delta dla testu t-Studenta:", delta_min_t, "\n")
+  cat("Minimalna wykrywalna różnica delta dla testu Wilcoxona:", delta_min_wilcoxon, "\n")  
+  
+  data <- data.frame(delta = E_range, 
+                     t_power = power_values, 
+                     wilcox_power = power_values_wilcoxon,
+                     variance_type = title)
+
+  return(data)
+}
+
+# Parametry symulacji
+n <- 300 # Rozmiar próbki
+alpha <- 0.05 # Poziom istotności
+n_sim <- 1000 # Liczba symulacji
+
+# Różne wariancje
+sigma2 <- 4
+E_range <- seq(-1, 1, by = 0.02)
+data_diff_var <- perform_comparison_test_for_probes(E_range, sigma2, X_sd = 1)
+
+# Te same wariancje
+sigma2 <- 1
+E_range <- seq(-1, 1, by = 0.02)
+data_same_var <- perform_comparison_test_for_probes(E_range, sigma2, X_sd = 1)
+
+
+# Wykres dla tych samych wariancji
+ggplot(data_same_var, aes(x = delta)) +
+  geom_point(aes(y = t_power, color = "t-student test"), shape = 16, size = 1) +
+  geom_point(aes(y = wilcox_power, color = "Wilcoxon test"), shape = 16, size = 1) +
+  geom_hline(yintercept = alpha, linetype = "dashed", color = "black", size = 0.5) + 
+  labs(title = "Te same odchylenia standardowe",
+       x = "Różnica delta w wartościach oczekiwanych",
+       y = "Oszacowana moc testu") +
+  scale_color_manual(name = "Test", values = c("t-student test" = "blue", "Wilcoxon test" = "red")) +
+  theme_minimal() +
+  geom_hline(yintercept = 0.8, linetype = "dotted", color = "orange")
+
+data_diff_var_neg <- subset(data_diff_var, delta < 0)
+data_diff_var_pos <- subset(data_diff_var, delta > 0)
+
+# Wykres dla różnych wariancji
+ggplot(data_diff_var, aes(x = delta)) +
+  geom_point(aes(y = t_power, color = "t-student test"), shape = 16, size = 1) +
+  geom_point(aes(y = wilcox_power, color = "Wilcoxon test"), shape = 16, size = 1) +
+  geom_hline(yintercept = alpha, linetype = "dashed", color = "black", size = 0.5) + 
+  labs(title = "Różne odchylenia standardowe",
+       x = "Różnica delta w wartościach oczekiwanych",
+       y = "Oszacowana moc testu") +
+  scale_color_manual(name = "Test", values = c("t-student test" = "blue", "Wilcoxon test" = "red")) +
+  theme_minimal() +
+  geom_hline(yintercept = 0.8, linetype = "dotted", color = "orange") +
+  # Linia regresji dla ujemnych wartości x
+  geom_smooth(data = data_diff_var_neg, aes(x = delta, y = t_power, color = "t-student test"), method = "lm", se = FALSE) +
+  geom_smooth(data = data_diff_var_neg, aes(x = delta, y = wilcox_power, color = "Wilcoxon test"), method = "lm", se = FALSE) +
+  # Linia regresji dla dodatnich wartości x
+  geom_smooth(data = data_diff_var_pos, aes(x = delta, y = t_power, color = "t-student test"), method = "lm", se = FALSE) +
+  geom_smooth(data = data_diff_var_pos, aes(x = delta, y = wilcox_power, color = "Wilcoxon test"), method = "lm", se = FALSE)
+
+```
+
